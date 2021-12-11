@@ -1,0 +1,448 @@
+---
+title: "Report of MA678 Midterm Project"
+author: "Tao He"
+date: "12/01/2021"
+output:
+  pdf_document: default
+---
+
+```{r message=FALSE,warning= FALSE, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(comment = NA, echo = FALSE, message = FALSE, warning = FALSE,
+                      margin = FALSE, fig.align  = 'center')
+pacman::p_load(
+readr, 
+tidyverse, 
+stringr,
+rstanarm,
+knitr,
+magrittr,
+gridExtra,
+tidytext,
+lubridate,
+gvlma,
+lme4,
+arm,
+lmerTest,
+lattice,
+ggplot2,
+plyr,
+dplyr,
+treemap,
+GGally,
+merTools,
+lattice,
+jtools)
+source("function.R")
+salary <- read.csv("Salary.csv",header = T)
+```
+
+## Abstract
+It is commonly recognized that the educational degree plays a significant role in getting a job and how a
+degree affects the salary has sparked heated discussion. While salary is not the first consideration for most
+people who choose to pursue a higher degree, we still think it is an interesting question. Therefore, I used
+salary data for employees who graduated from data science and STEM program and works on 12 companies,
+including Apple, Amazon, and Microsoft. Then, based on the multilevel regression analysis, I explored that
+having a higher degree had a positive impact on salary. This report consists of 5 main sections: Introduction,
+Method, Results, and Discussion.
+
+## Introduction
+
+Salaries often depend on the value of each employee and their value to the company as well. However, each employee has unique characteristics but also has similar backgrounds to other employees beyond various education levels, such as work experience and stock gifted. And certain specific qualities will allow the employee to contribute more to the company and stand out among the candidates, for example, a candidate with a lot of work experience is more likely to be hired by a company since not only he can get started in the shortest time, but also does not need to spend extra time and money to train him.
+
+Therefore, I used various educational levels to classify each employee in different companies and also consider work experience and being gifted stock to determine whether pursuing a Ph.D. is worthwhile. Before that, I would clean the data and select some needed variables.
+
+## Method
+
+### Data Cleaning and Processing
+
+The original data set is published on [Kaggle: Data Science and STEM Salaries](https://www.kaggle.com/jackogozaly/data-science-and-stem-salaries), which is a training file for this data set that has over 60,000 application salary records and 29 variables.
+
+There is a lot of information in this data set, including characters and binary variables which indicate whether a worker has tho those characteristics, e.g., he/she is an Asian with a Ph.D. working in Apple. Since we do not use all the columns in the dataset, I chose the following variables: ***Total Yearly Compensation***, ***Education***, ***Company***, ***Years of Experience***, ***Stock Grant Value***.
+
+- **Education**:  High school, Bachelor's Degree, Some College, Master's Degree, PhD 
+
+All those columns are 0 and 1 variables. For example, when "High school" equals 0, the worker has only a high school degree. Also, some college means someone started university but not finished yet.
+
+- **Company**: Amazon, Apple, Capital One, Cisco, Facebook, Google, IBM, Intel, Microsoft, Oracle, Sales force, VMware
+		
+After getting my new data set, I removed the useless space characters for some columns with the "dictionary" type, otherwise, the subsequent filtering section would not be able to filter all the eligible rows and maximize the use of the original data set. Then, I selected the twelve companies with the largest amount of data to see how education level affects workers' annual income. Finally, I got the cleaned data with 4657 observations.
+
+### Exploratory Data Analysis
+
+```{r include=FALSE}
+# Variables selection and Missing Values
+# library(dplyr)
+# library(stringr)
+
+salary %>%
+mutate_if(is.character, str_trim)
+
+# select columns I will use 
+salary <- dplyr::select(salary, totalyearlycompensation, company, title, 
+                 basesalary, yearsofexperience, yearsatcompany, stockgrantvalue,
+                 gender, Education, Masters_Degree, Bachelors_Degree, 
+                 Doctorate_Degree, Highschool, Some_College, location, Race)
+
+# rename the columns to make it looks more readable
+colnames <- c("total_yearly_compensation","company", "title", "base_salary", 
+              "years_of_experience", "years_at_company", "stock_grant_value","gender", "education", 
+              "Masters_Degree", "Bachelors_Degree", "Doctor_Degree", "High_School", 
+              "some_College", "location","race")
+colnames(salary) = colnames
+
+# drop NA
+salary <- salary[!is.na(salary$gender),]
+salary <- salary[!is.na(salary$education),]
+salary <- salary[!is.na(salary$race),]
+
+# we find there are some strange lines in gender, then drop
+# gsub(" ", "", salary$company)
+salary <- filter(salary, gender== c("Female","Male"))
+# set a new column indicate the gender
+# 0 is male, 1 is female
+salary %<>% mutate(sex = ifelse(gender == "Male", 0, 1))
+salary2 <- salary
+
+# select 12 company as multi_level
+company_count <- salary %>% dplyr::count(company) %>% arrange(desc(n)) %>% subset(n >= 126)
+company_id    <- unique(company_count$company)
+salary_com    <- salary %>% subset(company %in% company_id) %>% arrange(company)
+# cor()
+
+salary_com %<>% mutate(log_total_yearly_compensation = log(total_yearly_compensation))      #distribution
+salary_com %<>% mutate(log_stock_grant_value = log(stock_grant_value + 1))
+salary_com %<>% mutate(log_years_of_experience = log(years_of_experience + 1))
+```
+
+For **Total Yearly Compensation** and **Stock Grant Value** have a large range and also if we see the density plots of them, there will be a long tale. Therefore, in order to make the plot more easy to read, I take log of these variables and draw some distribution plot and scatter plots to see if there is correlation between some variables with total yearly compensation, since my question is how education levels affects the salary among different companies. 
+
+```{r fig.height=4, fig.width= 10, fig.cap="Distribution of annual income among different education levels"}
+do <- ddply(salary_com, "education", summarise, grp.mean=mean(log_total_yearly_compensation))
+ggplot(salary_com, aes(log_total_yearly_compensation, colour = education,fill=education)) + geom_density(alpha = 0.3) +
+  geom_vline(data=do, aes(xintercept=grp.mean, color=education), linetype="dashed") +
+  scale_fill_brewer(palette="Dark2") +
+  scale_color_brewer(palette="Dark2") +
+  labs(x = "log(Total Yearly Compensation)", y = "density")
+```
+
+Figure 1 shows that in most cases, the higher the degree, the higher the salary. In detail, the salary of **Ph.D.** employees is higher than those of other degrees. Moreover, one interesting thing is that bachelor's degree employees are paid more than those who work graduate from high school. This can happen since there is a gap between college and university and their efforts on the study are not the same as well, therefore, after spending a lot of money on college, some graduates with bachelor's degrees are not as good as high school students.
+
+
+```{r echo=FALSE, fig.height=5, fig.width= 13, fig.cap="Data was separate into groups with different company. Different colors represent individuals are in different education level."}
+ggplot(data = salary_com)+
+   aes(x = log_stock_grant_value,y = log_total_yearly_compensation) +
+   scale_y_continuous(labels=scales::dollar_format()) +
+#  scale_y_continuous(breaks = seq(0, 1000, 200), labels = dollar) +
+   geom_point(aes(color = education),alpha = 0.3) +
+   labs(title="log(Stock Grant Value + 1) vs. log(Total Yearly Compensation)",
+        x="log(Stock Grant Value + 1)",y="log(Total Yearly Compensation)") +
+   geom_smooth(formula = y ~ x, aes(color = education), method = "lm", se=F) +
+#   scale_colour_brewer(palette = "Dark2") +
+   facet_grid(~company)
+```
+
+
+Figure 2 shows the relationship between the value of stock grants owned by individuals and total annual compensation. In the majority of companies, there is a positive relationship. However, the effect varies in different companies with different intercepts and slopes. In detail, with the same stock grant value, compared with other education levels, Ph.D. workers have a higher annual salary, especially in some companies, like **Apple**, **Google**, and **Oracle**, which are all Technology Companies.
+
+```{r echo=FALSE, fig.height=5, fig.width= 13, fig.cap="correlation between years of experience and total yearly compensation."}
+ggplot(data = salary_com)+
+   aes(x = years_of_experience,y = log_total_yearly_compensation) +   # consider using total_yearly_compensation_1000
+#  ylim(0,1500) +
+   scale_y_continuous(labels=scales::dollar_format()) +
+#  scale_y_continuous(breaks = seq(0, 1000, 200), labels = dollar) +
+   geom_point(aes(color = education),alpha = 0.3) +
+   labs(title="log(Years of Experience + 1) vs. log(Total Yearly Compensation)",
+        x="log(Years of Experience + 1)",y="log(Total Yearly Compensation)") +
+   geom_smooth(formula = y ~ x, aes(color = education), method = "lm", se=F) +
+#   scale_colour_brewer(palette = "Dark2") +
+   facet_grid(~company)
+```
+
+Figure 3 indicates that there is also a positive correlation between work experience and annual income in different company groups. However, the magnitude and intercept of the effect vary widely across education levels. This makes sense since some people drop out of college without a degree and start their own business or are tapped by companies for special talent. Therefore, they are highly capable and valuable to the company, especially after gaining work experience.
+
+Moreover, we noticed that in almost all companies, some college workers' salaries increase rapidly with work experience growing. Additionally, in **VMware**, when a worker graduated from high school has more work of experience, he/she will have less yearly income, which is quiet strange. Therefore, I decided to go in detail to figure out how the education level affect the yearly income in various company. 
+
+### Model Fitting
+
+Since the annual income of workers varies in different companies, especially those with different levels of education, then I decided to use a multilevel model to fit the "Total Yearly Compensation". As for variable selection, in addition to the binary variable of education level, I also included "Stock Grant Value" and "Years of Experience", which directly affect the annual salary as we mentioned before. Furthermore, as these two continuous variables are more or less skewed and have heavy tails, I used `log(variable + 1)` to create new variables. Their distribution plots can be found in the Appendix of this report. Since it is clear from the EDA that different levels of education and annual salary are correlated across companies, I use different slopes and intercepts in the multilevel model. Below is the function:
+
+$$log(TotalYearlyCompensation)= 11.03 + 0.09 \cdot log(StockGrantValue + 1) + 0.23 \cdot log(YearOfExperience + 1) - $$
+$$0.12 \cdot MastersDegree + 0.18 \cdot BachelorsDegree + 0.09 \cdot DoctorDegree + $$
+$$0.12 \cdot HighSchool + 0.03 \cdot SomeCollege + effect_{company}$$
+
+```{r include=FALSE, warning=FALSE}
+# education level trend vary to company
+model_new <- lmer(log_total_yearly_compensation ~ 1 + Masters_Degree + Bachelors_Degree
+                  + Doctor_Degree + High_School +some_College + log_years_of_experience 
+                  + log_stock_grant_value + (1 + Masters_Degree + Bachelors_Degree
+                                             +Doctor_Degree + High_School
+                                             +some_College|company),
+                  salary_com)
+summ(model_new)
+ranef(model_new) 
+```
+And to see the fixed effects below, all variables are significant at alpha = 0.05 level.
+
+|                            |Estimate   |Std. Error |df       |t value |Pr(>&#124;t&#124;) |
+|:---:                       |:---:      |:---:      |:---:    |:---:   |:---:              |
+|(Intercept)                 |11.03      |0.43       |<0.00    |25.81   |0.992              |
+|Masters Degree              |-0.12      |0.42       |<0.00    |-0.27   |0.993              |
+|Bachelors Degree            |-0.22      |0.42       |<0.00    |-0.53   |0.991              |
+|Doctor Degree               |0.09       |0.42       |<0.00    |0.22    |0.995              |
+|High School                 |-0.22      |0.43       |<0.00    |-0.53   |0.987              |
+|some College                |0.03       |0.43       |<0.00    |-0.08   |0.997              |
+|log(years_of_experience+1)  |0.23       |<0.00      |4621.46  |30.07   |<2e-16 ***         |
+|log(stock_grant_value+1)    |0.09       |<0.00      |3849.71  |33.18   |<2e-16 ***         |
+
+
+## Result
+
+## Model Interpretation
+
+Just take some example here, for company **Apple**, we can conclude this formula:
+$$log(TotalYearlyCompensation) =  11.11 + 0.23 \cdot log(StockGrantValue + 1) + 0.09 \cdot log(YearOfExperience + 1) -$$
+$$0.12 \cdot MastersDegree -0.22 \cdot BachelorsDegree + 0.07 \cdot DoctorDegree -0.20 \cdot HighSchool  -0.07 \cdot SomeCollege $$ 
+
+|          |(intercept)   |Masters Degree  |Bachelors Degree  |Doctor Degree  |High School  |some College  |
+|:---:     |:---:         |:---:           |:---:             |:---:          |:---:        |:---:         |
+|Amazon    |10.95         |-0.11           |-0.22             |0.12           |-0.25        |-0.02         |
+|Apple     |11.11         |-0.12           |-0.22             |0.07           |-0.20        |-0.07         |
+|Google    |11.09         |-0.13           |-0.17             |0.07           |-0.19        |-0.11         |
+|Intel     |10.72         |-0.11           |-0.14             |0.18           |-0.28        |-0.02         |
+
+
+```{r warning= FALSE, fig.height = 4, fig.width= 10, fig.cap = "Coefficients of various education level among various companies"}
+effect <- ranef(model_new)$company
+for(i in 1: dim(effect)[1]){
+  effect[i, ] <- effect[i, ] +  fixef(model_new)[1:6] 
+}
+
+effect <- effect[, 2: 6]
+effect$company <- rownames(effect)
+effect <- effect %>% data.table::melt(id = c("company"))
+ggplot(effect) + 
+  geom_line(aes(x = company, y = value, group = variable, col = variable)) +
+  labs(x = "Company", y = "Coefficients", title = "Random effect comparison")
+```
+
+According to the former table, among the displayed companies, we can see that Apple has the highest intercept, which means the highest average annual compensation when other predictors keep the same. Additionally, figure 4 illustrates that whatever the company except for VMware, individuals with doctor degrees tend to have higher annual compensation. Comparatively, people with high school or bachelor's degree have the lowest annual compensation. 
+
+### Model Validation
+
+After fitting the model, I did a residual plot, Q-Q plot, and residual leverage for model checking, which are shown in the Appendix part. The residual plot of the model shows that the average mean of residual is approximately centered at zero line, which indicates zero mean checks are satisfied. Moreover, the majority of residual points are on the normal distribution line. This illustrates most residues follow the normal distribution except for some extreme values. As for the Residuals vs Leverage plot, the result is quite perfect except for one abnormal point (leverage = 1). I will look into that in further research. 
+
+## Discussion
+
+By constructing and fitting the model, we can come to the conclusion that earning a doctor's degree really contributes to a higher salary. However, when it comes to high school and bachelor's degrees, their relationship with annual compensation is not clear. Thus, pursuing a Ph.D. is a fairly good choice for youngsters. 
+
+However, there still exist some limitations in our model. Firstly, during the EDA part, I only looked into the relationships between continuous variables but fail to do a covariance test between categorical variables (education level) and continuous variables. Besides, during model checking, the Q-Q plot shows that the model fails to fit perfectly with very high salary or very low salary observations. What's more, I only selected 12 companies with the most data and that may cause conclusion bias. 
+
+As for predictors selecting, I only include experience year, stock grant value, and education level into the model. In fact, other variables can have an impact on annual compensation, including them may increase the flexibility and accuracy of the model and give a better fit. 
+
+Therefore, in the future, I would select more predictors and expand the data set to make the conclusion more reliable. Furthermore, I plan to utilize the Chi-square test or t-test to check the correlation between categorical variables and continuous variables. 
+
+## Citation
+
+**Data Source**
+
+Jack Ogozaly, Accessed October 2021, Kaggle: Data Science and STEM Salaries, https://www.kaggle.com/jackogozaly/data-science-and-stem-salaries
+
+**Work Cited**
+
+Hadley Wickham (2017), tidyverse: Easily Install and Load the ‘Tidyverse', R package version 1.2.1.: https://CRAN.R-project.org/package=tidyverse
+
+Marco Murtinu, Marta-Bar and Zarasim (November 14, 2021), Is a PhD worth it (Python)? https://www.kaggle.com/marcomurtinu/is-a-phd-worth-it
+
+Rune Haubo Bojesen Christensen, lmerTest: Tests in Linear Mixed Effects Models, R package version 3.1.3.: https://CRAN.R-project.org/package=lmerTest
+
+Plot random effects from lmer (lme4 package) using qqmath or dotplot: How to make it look fancy?,https://stackoverflow.com/questions/13847936/plot-random-effects-from-lmer-lme4-package-using-qqmath-or-dotplot-how-to-mak
+
+
+\newpage
+## Appendix
+
+### Check distribution and correlation
+
+```{r fig.height=2.5, fig.width=5,fig.cap="Correlation among years of experience, stock grant value and total yearly compensation"}
+# see the correlation of continuous variables
+salary_cor <- dplyr::select(salary_com, years_of_experience, stock_grant_value, total_yearly_compensation)
+cor <- data.frame(cor(salary_cor))
+# library(ggplot2)
+# ggplot(salary_com, aes(x = log(total_yearly_compensation))) + 
+#   geom_histogram(aes(y = ..density..), bins = 30) + geom_density( lwd = .8)
+# ggplot(salary_com, aes(x = log(years_of_experience + 1))) + 
+#   geom_histogram(aes(y = ..density..), bins = 15) + geom_density( lwd = .8)
+# ggplot(salary_com, aes(x = log(stock_grant_value + 1))) +
+#   geom_histogram(aes(y = ..density..), bins = 15) + geom_density( lwd = .8)
+
+ggpairs(
+  salary_cor[, c(1,2,3)],
+  upper = list(continuous = "density", combo = "box_no_facet"),
+  lower = list(continuous = "points", combo = "dot_no_facet")
+)
+```
+
+### More EDA
+
+```{r fig.height=4, fig.width=7, fig.cap="Distribution of total yearly compensation by divided into different categories"}
+salary %<>% dplyr::mutate(total_yearly_compensation_1000 = total_yearly_compensation/1000)
+salary %<>% dplyr::mutate(stock_grant_value_1000 = stock_grant_value/1000)
+# divided by education
+p1 <- ggplot(salary, aes(x = education , y = total_yearly_compensation_1000, fill = education)) +
+  ylim(0,1000) +
+  geom_boxplot(alpha=0.5, outlier.colour = NA) +
+  theme(legend.position="none") +
+  coord_flip() +
+  labs(x = "Education", y = "Yearly Income in K")
+
+
+# divided by company
+# select 7 company
+salary_top_company <- filter(salary, company == c("Amazon","Microsoft","Google",
+                                                 "Facebook","Apple"))
+p2 <- ggplot(salary_top_company, aes(x = company , y = total_yearly_compensation_1000, fill = company)) +
+  ylim(0,1000) +
+  geom_boxplot(alpha=0.5, outlier.colour = NA) +
+  theme(legend.position="none") +
+  coord_flip() +
+  labs(x = "Company", y = "Yearly Income in K")
+
+# divided by title 
+salary_title <- filter(salary, title == c("Data Scientist", "Business Analyst",
+                                          "Marketing", "Hardware Engineer", 
+                                          "Mechanical Engineer", "Software Engineer"))
+
+p3 <- ggplot(salary_title, aes(x = title , y = total_yearly_compensation_1000, fill = title)) +
+  ylim(0,1000) +
+  geom_boxplot(alpha=0.5, outlier.colour = NA) +
+  theme(legend.position="none") + 
+  coord_flip() +
+  labs(x = "Title", y = "Yearly Income in K")
+
+# divided by location
+# select 7 locations
+salary_top_location <- filter(salary, location == c("Boston, MA","New York, NY","San Francisco, CA",
+                                                 "Los Angeles, CA","Seattle, WA","Chicago, IL"))
+p4 <- ggplot(salary_top_location, aes(x = location , y = total_yearly_compensation_1000, fill = location)) +
+  ylim(0,1000) +
+  geom_boxplot(alpha=0.5, outlier.colour = NA) +
+  theme(legend.position="none") + 
+  coord_flip() +
+  labs(x = "Location", y = "Yearly Income in K")
+
+grid.arrange(p1,p2,p3,p4,nrow=2)
+```
+
+```{r fig.height=3, fig.width=8, echo=FALSE, warning=FALSE, comment=FALSE, fig.cap="How many years of working experience we need to be a software engineering manager and a data scientist? It takes less time for a woman than a man. Moreover, if you would like to become a software engineering manager, you need about 13 to 15 years of work experience and if you want to become a data Scientist, you need about 4 to 5 years of work experience."}
+# how many years of working experience we need to be a software engineering manager?
+# compare female and male
+salary_SEM <- filter(salary2, title == c("Software Engineering Manager"))
+
+# library(plyr)
+# library(dplyr)
+mu <- ddply(salary_SEM, "gender", summarise, grp.mean=mean(years_of_experience))
+p4 <-ggplot(salary_SEM, aes(x=years_of_experience, fill = gender, color=gender)) +
+  geom_histogram(aes(y=..density..), alpha=0.1, position="dodge") +
+  geom_density(alpha=0.3) +
+  geom_vline(data=mu, aes(xintercept=grp.mean, color=gender),
+             linetype="dashed")+
+  theme(legend.position="top") +
+  scale_color_manual(values=c("#CC3366", "#336699")) +
+  scale_fill_manual(values=c("#CC3366", "#336699")) +
+  labs(title="Be a Software Engineering Manager")
+
+# Data Scientist
+salary_DS <- filter(salary2, title == c("Data Scientist"))
+
+me <- ddply(salary_DS, "gender", summarise, grp.mean=mean(years_of_experience))
+p5 <- ggplot(salary_DS, aes(x=years_of_experience, fill = gender, color=gender)) +
+  geom_histogram(aes(y=..density..), alpha=0.1, position="dodge") +
+  geom_density(alpha=0.3) +
+  geom_vline(data=me, aes(xintercept=grp.mean, color=gender),
+             linetype="dashed")+
+  theme(legend.position="top") +
+  scale_color_manual(values=c("#CC3366", "#336699")) +
+  scale_fill_manual(values=c("#CC3366", "#336699")) +
+  labs(title="Being a Data Scientist")
+
+grid.arrange(p4,p5,nrow=1)
+```
+
+```{r fig.height=4.5, fig.width=8, echo=FALSE, warning=FALSE, comment=FALSE, fig.cap="Average log(Total yearly compensation) under education level and company. In almost all companies, PhD workers are paid the highest salary."}
+detach("package:plyr", unload = TRUE)
+salary_com %>% group_by(education, company) %>%
+  summarize(mean = mean(log(total_yearly_compensation))) %>% ungroup() %>%
+  ggplot() + 
+  geom_point(aes(x = education,y = mean, color = education),size=2) + 
+  theme_bw() + 
+  labs(x = "Education Level", y = "log(Total Yearly Compensation)", 
+       title = "Average log(Total yearly compensation) under education level and company") + 
+  facet_wrap(~ company) +
+  theme(axis.text.x = element_text(angle = 50, hjust = 0.5, vjust = 0.5))+
+  theme(plot.title=element_text(size=12, face="bold", hjust = 0.5))
+library(plyr)
+```
+
+\newpage
+### Model check
+
+```{r echo=FALSE, fig.height=2.5, fig.width=6, fig.cap="Residual plot and Q-Q plot."}
+re <- plot(model_new)
+qq <- qqmath(model_new)
+grid.arrange(re,qq,nrow=1)
+```
+
+
+```{r echo=FALSE, fig.height=2, fig.width=4, fig.cap="Residuals vs Leverage. There is only one strange point out of the rest ponits"}
+ggplot(data.frame(lev=hatvalues(model_new),pearson=residuals(model_new,type="pearson")),
+      aes(x=lev,y=pearson)) +
+    geom_point() +
+    theme_bw()
+```
+
+```{r}
+# # library(merTools)
+# predictInterval(model_new)
+# 
+# a <- REsim(model_new)
+# g <- filter(a, term== c("(Intercept)"))
+# b <- filter(a, term== c("Masters_Degree"))
+# c <- filter(a, term== c("Bachelors_Degree"))
+# d <- filter(a, term== c("Doctor_Degree"))
+# e <- filter(a, term== c("High_School"))
+# f <- filter(a, term== c("some_College"))
+# 
+# pp <- plotREsim(g)
+# pp1 <- plotREsim(b)
+# pp2 <- plotREsim(c)
+# pp3 <- plotREsim(d)
+# pp4 <- plotREsim(e)
+# pp5 <- plotREsim(f)
+# grid.arrange(pp,pp1,pp2,pp3,pp4,pp5)
+```
+
+\newpage
+### Model coefficients
+
+```{r fig.height=4, fig.width=7, comment = NA, echo = FALSE, message = FALSE, warning = FALSE, margin = FALSE, fig.cap="Random effect coefficients. Each point in various education level and intercept represents various group levels, which are companies"}
+require(lme4)                            ## for lmer(), sleepstudy
+require(lattice)                         ## for dotplot()
+ggCaterpillar(ranef(model_new, condVar=TRUE))  ## using ggplot2
+```
+
+```{r}
+# dotplot(ranef(model_new,condVar=TRUE))  #*#
+```
+
+
+### Full Results
+
+**Fixed effects of model**
+```{r}
+fixef(model_new)
+```
+**Coefficients of model**
+```{r}
+coef(model_new)
+```
+
