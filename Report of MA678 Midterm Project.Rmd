@@ -57,7 +57,7 @@ Therefore, I used various educational levels to classify each employee in differ
 
 The original data set is published on [Kaggle: Data Science and STEM Salaries](https://www.kaggle.com/jackogozaly/data-science-and-stem-salaries), which is a training file for this data set that has over 60,000 application salary records and 29 variables.
 
-There is a lot of information in this data set, including characters and binary variables which indicate whether a worker has tho those characteristics, e.g., he/she is an Asian with a Ph.D. working in Apple. Since we do not use all the columns in the dataset, I chose the following variables: ***Total Yearly Compensation***, ***Education***, ***Company***, ***Years of Experience***, ***Stock Grant Value***.
+There is a lot of information in this data set, including characters and binary variables which indicate whether a worker has those characteristics, e.g., he/she is an Asian with a Ph.D. working in Apple. Since we do not use all the columns in the dataset, I chose the following variables: ***Total Yearly Compensation***, ***Education***, ***Company***, ***Years of Experience***, ***Stock Grant Value***.
 
 - **Education**:  High school, Bachelor's Degree, Some College, Master's Degree, PhD 
 
@@ -160,7 +160,7 @@ ggplot(data = salary_com)+
 
 Figure 3 indicates that there is also a positive correlation between work experience and annual income in different company groups. However, the magnitude and intercept of the effect vary widely across education levels. This makes sense since some people drop out of college without a degree and start their own business or are tapped by companies for special talent. Therefore, they are highly capable and valuable to the company, especially after gaining work experience.
 
-Moreover, we noticed that in almost all companies, some college workers' salaries increase rapidly with work experience growing. Additionally, in **VMware**, when a worker graduated from high school has more work of experience, he/she will have less yearly income, which is quiet strange. Therefore, I decided to go in detail to figure out how the education level affect the yearly income in various company. 
+Moreover, we noticed that in almost all companies, some college workers' salaries increase rapidly with work experience growing. Additionally, in **VMware**, when a worker graduated from high school has more work of experience, he/she will have less yearly income, which is quite strange. Therefore, I decided to go in detail to figure out how the education level affect the yearly income in various company. 
 
 ### Model Fitting
 
@@ -181,7 +181,7 @@ model_new <- lmer(log_total_yearly_compensation ~ 1 + Masters_Degree + Bachelors
 summ(model_new)
 ranef(model_new) 
 ```
-And to see the fixed effects below, all variables are significant at alpha = 0.05 level.
+And to see the fixed effects below, some variables are significant at alpha = 0.05 level, but the other variables are not. Then, I will talk those estimate coefficients.
 
 |                            |Estimate   |Std. Error |df       |t value |Pr(>&#124;t&#124;) |
 |:---:                       |:---:      |:---:      |:---:    |:---:   |:---:              |
