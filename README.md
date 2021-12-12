@@ -1,7 +1,7 @@
 # MA678-Midterm-Project
 
 ## Model Overview
-In this repository, I have fit a multilevel linear model to find how education level affects the total yearly compensation and whether the higher degree we earns, the higher income we will have. Variables I considered include stock grant value, years of experience, education level.
+In this repository, I have fit a multilevel linear model to find how education level affects the total yearly compensation and whether the higher degree we earns, the higher income we will have. Variables I considered include stock grant value, years of experience, education levels.
 
 ## Sources
 **Data Source**
